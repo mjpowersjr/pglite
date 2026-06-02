@@ -80,6 +80,16 @@
         "default": "./dist/fs/opfs-ahp.cjs"
       }
     },
+    "./opfs-image": {
+      "import": {
+        "types": "./dist/fs/opfs-image/index.d.ts",
+        "default": "./dist/fs/opfs-image/index.js"
+      },
+      "require": {
+        "types": "./dist/fs/opfs-image/index.d.cts",
+        "default": "./dist/fs/opfs-image/index.cjs"
+      }
+    },
     "./basefs": {
       "import": {
         "types": "./dist/fs/base.d.ts",

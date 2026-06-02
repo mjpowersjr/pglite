@@ -539,6 +539,11 @@ export class PGlite
           pgInitDbOpts.dataDir = undefined
           pgInitDbOpts.extensions = undefined
           pgInitDbOpts.loadDataDir = undefined
+          // The initdb sub-instance runs against an in-memory filesystem; it must
+          // not reuse a caller-supplied `fs` instance, or that instance would be
+          // double-init()ed (re-opening its backing handles and, for the opfs
+          // backends, throwing on the second open).
+          pgInitDbOpts.fs = undefined
           const pg_initDb = await PGlite.create(pgInitDbOpts)
 
           // Initialize the database

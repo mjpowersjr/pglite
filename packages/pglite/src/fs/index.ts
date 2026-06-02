@@ -27,6 +27,11 @@ export function parseDataDir(dataDir?: string) {
     // Remove the opfsahp:// prefix, and use opfs access handle pool filesystem
     dataDir = dataDir.slice(11)
     fsType = 'opfs-ahp'
+  } else if (dataDir?.startsWith('opfs-image://')) {
+    // Remove the opfs-image:// prefix, and use the single-file block-image
+    // opfs filesystem
+    dataDir = dataDir.slice(13)
+    fsType = 'opfs-image'
   } else if (!dataDir || dataDir?.startsWith('memory://')) {
     // Use in-memory filesystem
     fsType = 'memoryfs'
@@ -49,6 +54,10 @@ export async function loadFs(dataDir?: string, fsType?: FsType) {
     // Lazy load the opfs-ahp to so that it's optional in the bundle
     const { OpfsAhpFS } = await import('./opfs-ahp.js')
     fs = new OpfsAhpFS(dataDir)
+  } else if (dataDir && fsType === 'opfs-image') {
+    // Lazy load the opfs-image fs so that it's optional in the bundle
+    const { OpfsImageFS } = await import('./opfs-image/index.js')
+    fs = new OpfsImageFS(dataDir)
   } else {
     fs = new MemoryFS()
   }
