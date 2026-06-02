@@ -117,3 +117,39 @@ The Origin Private Filesystem API provides both asynchronous and synchronous met
 To overcome these limitations, and to provide a fully synchronous file system to PGlite on top of OPFS, we use something called an "access handle pool". When you first start PGlite we open a pool of OPFS access handles with randomised file names; these are then allocated to files as needed. After each query, a pool maintenance job is scheduled that maintains its size. When you inspect the OPFS directory where the database is stored, you will not see the normal Postgres directory layout, but rather a pool of files and a state file containing the directory tree mapping along with file metadata.
 
 The PGlite OPFS AHP FS is inspired by the [wa-sqlite](https://github.com/rhashimoto/wa-sqlite) access handle pool file system by [Roy Hashimoto](https://github.com/rhashimoto).
+
+## OPFS Image FS
+
+The OPFS Image filesystem is also built on top of the [Origin Private Filesystem](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system), but instead of mapping each Postgres file to its own OPFS file it stores the **entire cluster inside a single OPFS file** — a filesystem-in-a-file. Like the AHP FS it is only available when PGlite is run in a Web Worker.
+
+To use the OPFS Image FS you can use one of these methods:
+
+- Set the `dataDir` to a directory within the origins OPFS
+  ```ts
+  const pg = new PGlite('opfs-image://path/to/datadir/')
+  ```
+- Import and pass the FS explicitly
+  ```ts
+  import { OpfsImageFS } from '@electric-sql/pglite/opfs-image'
+  const pg = new PGlite({
+    fs: new OpfsImageFS('./path/to/datadir/'),
+  })
+  ```
+
+### Platform Support
+
+| Node | Bun | Deno | Chrome | Safari | Firefox |
+| ---- | --- | ---- | ------ | ------ | ------- |
+|      |     |      | ✓      | ?\*    | ✓       |
+
+\* Chrome and Firefox are verified in CI. Because the whole cluster lives in one file, the OPFS Image FS only ever holds **a single** sync access handle open, so — unlike the AHP FS — it is **not** affected by Safari's limit on the number of simultaneously-open access handles. Safari/webkit is therefore expected to work but is not yet verified in CI (the webkit web test is included but disabled pending confirmation of OPFS `createSyncAccessHandle` support in the test runner).
+
+### Why a single file?
+
+The AHP FS keeps one sync access handle open per file for the lifetime of the database. A standard Postgres cluster is made up of ~1000 files, so the AHP FS holds ~1000 handles open at once. Beyond Safari's hard limit, holding close to ~1000 sync access handles can exhaust the per-process file-descriptor limit on Chromium and wedge the whole renderer (`createSyncAccessHandle()` stops returning rather than rejecting).
+
+The OPFS Image FS sidesteps this entirely by keeping only **one** handle open. The container is laid out as a superblock, a small metadata region, and a data region of fixed-size 8 KiB blocks (matching the Postgres page size); each Postgres file is stored as a list of block extents inside the data region, and the directory tree plus per-file extents are the only durable metadata. Because that single handle's `read`/`write`/`truncate`/`flush` are synchronous, the VFS is fully synchronous in the worker — it needs **no `SharedArrayBuffer`, no Atomics, and no cross-origin isolation (COOP/COEP) headers**.
+
+Metadata durability uses an incremental journal: each metadata change is appended as a small record to a journal region, and a full double-buffered checkpoint of the tree is written only when the journal fills — so per-statement `syncToFs` work is proportional to the change, not the size of the cluster. On reopen the FS loads the newest valid checkpoint, replays the journal, and rebuilds the block allocator from the committed extents; reopening an existing `dataDir` resumes the cluster (Postgres skips `initdb`). Freed blocks are held until the free has been durably synced, so a crash can never cross-link a surviving file to reused blocks.
+
+This is conceptually the same approach as SQLite's [`opfs-sahpool`](https://sqlite.org/wasm/doc/trunk/persistence.md#vfs-opfs-sahpool) VFS (a single backing file, no COOP/COEP) applied to Postgres's many-file layout.

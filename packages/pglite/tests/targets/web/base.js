@@ -10,7 +10,7 @@ const PGLITE_WORKER_PATH = '../../../dist/worker/index.js'
 const PGLITE_LIVE_PATH = '../../../dist/live/index.js'
 const WORKER_PATH = '/tests/targets/web/worker.js'
 
-const useWorkerForBbFilename = ['opfs-ahp://base']
+const useWorkerForBbFilename = ['opfs-ahp://base', 'opfs-image://base']
 
 export function tests(env, dbFilename, target) {
   describe(`targets ${target}`, () => {
