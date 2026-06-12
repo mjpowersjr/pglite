@@ -770,5 +770,58 @@ await testEsmCjsAndDTC(async (importType) => {
       const re = /\PGlite \d+\.\d+\.\d+\b/
       expect(re.test(version.rows[0].version)).toBeTruthy()
     })
+
+    it('serialize and parse Array<int> and Array<bigint>', async () => {
+      const myint = [{ id: 1 }, { id: 2 }]
+      const mybigint = [{ id: 9007199254740992n }, { id: 9007199254740993n }]
+      await db.exec(`CREATE TABLE IF NOT EXISTS "myint" ("id" int NOT NULL);`)
+      await db.exec(
+        `CREATE TABLE IF NOT EXISTS "mybigint" ("id" bigint NOT NULL);`,
+      )
+      await db.query(
+        `INSERT INTO myint (id) SELECT x.* from json_to_recordset($1) as x(id int); `,
+        [myint],
+      )
+      await db.query(
+        `INSERT INTO mybigint (id) SELECT x.* from json_to_recordset($1) as x(id bigint); `,
+        [mybigint],
+      )
+      const result2 = await db.query('SELECT * FROM mybigint')
+      expect(result2.rows).toEqual(mybigint)
+    })
+
+    it('serialize with no concrete type', async () => {
+      const theDate = '2024-01-15T12:34:56.000Z'
+      const date = new Date(theDate)
+      const res1 = await db.query(
+        'select $1 as number, $2 as date, $3 as bool',
+        [42, date, true],
+      )
+
+      expect(res1).toEqual({
+        rows: [
+          {
+            number: '42',
+            date: theDate,
+            bool: 'true',
+          },
+        ],
+        fields: [
+          {
+            name: 'number',
+            dataTypeID: 25,
+          },
+          {
+            name: 'date',
+            dataTypeID: 25,
+          },
+          {
+            name: 'bool',
+            dataTypeID: 25,
+          },
+        ],
+        affectedRows: 0,
+      })
+    })
   })
 })
